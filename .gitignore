@@ -1,1 +1,4 @@
 dataset_dino
+outputs
+wandb
+__pycache__

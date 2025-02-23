@@ -7,7 +7,7 @@ import pandas as pd
 from pathlib import Path
 
 dataset_name = "Ityl/so100_recording1"
-dino_ds_folder = "dataset_dino"
+dino_ds_folder = "dataset_dino/custom"
 
 H, W = 224, 224
 
@@ -46,6 +46,8 @@ def save_video_as_pth(video_folder, save_folder):
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
     
+    c = 0
+
     for video_name in os.listdir(video_folder):
         print(video_name)
         video_path = os.path.join(video_folder, video_name)
@@ -55,16 +57,18 @@ def save_video_as_pth(video_folder, save_folder):
             video_tensor = video_to_tensor(video_path)
             
             # Saving the tensor in a .pth file
-            save_path = os.path.join(save_folder, f"{os.path.splitext(video_name)[0]}.pth")
+            save_path = os.path.join(save_folder, f"episode_{c:03d}.pth")
             torch.save(video_tensor, save_path)
             print(f"Saved {save_path}")
+        
+        c+=1
 
 # Path to the folder with .mp4 videos
 video_folder = lerobot_ds_folder + '/videos/chunk-000/observation.images.realsense_side'
 # Path where you want to save videos as .pth files
 save_folder = dino_ds_folder + '/obses'
 
-# save_video_as_pth(video_folder, save_folder)
+save_video_as_pth(video_folder, save_folder)
 
 lengths = []
 with open(lerobot_ds_folder + "/meta/episodes.jsonl", "r") as f:
@@ -80,33 +84,36 @@ with open(lerobot_ds_folder + "/meta/info.json", "r") as f:
 # Convertir en tenseur PyTorch
 tensor_lengths = torch.tensor(lengths)
 # Sauvegarder dans un fichier .pth
-torch.save(tensor_lengths, dino_ds_folder + "/seq_length.pth")
+torch.save(tensor_lengths, dino_ds_folder + "/seq_lengths.pth")
 
 nb_episodes = len(tensor_lengths)
 max_length = tensor_lengths.max().item()
 
-tensors_states = []
-tensors_actions = []
+tensor_list_states = []
+tensor_list_actions = []
 
 for episode in range(nb_episodes):
 
     df = pd.read_parquet(f"{lerobot_ds_folder}/data/chunk-000/episode_{episode:06d}.parquet", engine="pyarrow")
     
-    tensor_states = torch.tensor(np.array(df["observation.state"].to_list()))  # Convertir en tenseur PyTorch
-    tensor_states = torch.cat((tensor_states, torch.zeros((max_length-tensor_lengths[episode], *state_shape))), dim=0) # pad zeros to max tensor length
-    tensors_states.append(tensor_states)
+    tensor_state = torch.tensor(np.array(df["observation.state"].to_list()))  # Convertir en tenseur PyTorch
+    tensor_state = torch.cat((tensor_state, torch.zeros((max_length-tensor_lengths[episode], *state_shape))), dim=0) # pad zeros to max tensor length
+    tensor_list_states.append(tensor_state)
 
-    tensor_actions = torch.tensor(np.array(df["action"].to_list()))  # Convertir en tenseur PyTorch
-    tensor_actions = torch.cat((tensor_actions, torch.zeros((max_length-tensor_lengths[episode], *action_shape))), dim=0) # pad zeros to max tensor length
-    tensors_actions.append(tensor_actions)
-
-# Sauvegarder en fichier .pth dans un autre dossier
-tensors_states = torch.stack(tensors_states)
-torch.save(tensors_states, dino_ds_folder + "/states.pth")
+    tensor_action = torch.tensor(np.array(df["action"].to_list()))  # Convertir en tenseur PyTorch
+    tensor_action = torch.cat((tensor_action, torch.zeros((max_length-tensor_lengths[episode], *action_shape))), dim=0) # pad zeros to max tensor length
+    tensor_list_actions.append(tensor_action)
 
 # Sauvegarder en fichier .pth dans un autre dossier
-tensors_actions = torch.stack(tensors_actions)
-torch.save(tensor_actions, dino_ds_folder + "/actions.pth")
+tensor_list_states = torch.stack(tensor_list_states)
+print("Saving states as tensor of shape:", tensor_list_states.shape)
+torch.save(tensor_list_states, dino_ds_folder + "/states.pth")
+test1 = torch.load(dino_ds_folder + "/states.pth")
+print(test1.shape)
 
-print(tensors_states.shape)
-print(tensors_actions.shape)
+# Sauvegarder en fichier .pth dans un autre dossier
+tensor_list_actions = torch.stack(tensor_list_actions)
+print("Saving actions as tensor of shape:", tensor_list_actions.shape)
+torch.save(tensor_list_actions, dino_ds_folder + "/actions.pth")
+test2 = torch.load(dino_ds_folder + "/actions.pth")
+print(test2.shape)

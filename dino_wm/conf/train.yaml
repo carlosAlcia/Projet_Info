@@ -21,9 +21,9 @@ hydra:
     submitit_folder: ${hydra.sweep.dir}/.submitit/%j
     nodes: 1
     tasks_per_node: 1
-    cpus_per_task: 8
-    mem_gb: 512
-    gres: "gpu:h100:1"
+    cpus_per_task: 4
+    gpus_per_node: 1
+    mem_gb: 16
     timeout_min: 2880
     setup: ["export DEBUGVAR=$(scontrol show hostnames $SLURM_JOB_NODELIST)",
             export MASTER_ADDR="$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)",
@@ -31,10 +31,10 @@ hydra:
 
 training:
   seed: 0
-  epochs: 100
-  batch_size: 32 # should >= nodes * tasks_per_node
+  epochs: 1
+  batch_size: 8 # should >= nodes * tasks_per_node
   save_every_x_epoch: 1
-  reconstruct_every_x_batch: 500
+  reconstruct_every_x_batch: 100
   num_reconstruct_samples: 6
   encoder_lr: 1e-6
   decoder_lr: 3e-4
@@ -52,7 +52,7 @@ action_emb_dim: 10
 num_action_repeat: 1
 
 # proprio encoder
-proprio_emb_dim: 10 
+proprio_emb_dim: 10
 num_proprio_repeat: 1
 
 num_hist: 3

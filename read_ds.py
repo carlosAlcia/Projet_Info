@@ -30,14 +30,14 @@ def video_to_tensor(video_path):
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
         # Resize to desired dimensions (H, W)
-        frame = cv2.resize(frame, (H, W))
+        # frame = cv2.resize(frame, (H, W)) # already done in dino_wm code
         
         frames.append(frame)
     
     cap.release()
     
     # Convert the frame list into a tensor
-    video_tensor = torch.tensor(np.array(frames)).permute(0, 3, 1, 2)  # [T, H, W, C] -> [T, C, H, W]
+    video_tensor = torch.tensor(np.array(frames)) # .permute(0, 3, 1, 2)  # [T, H, W, C] -> [T, C, H, W] # already done in dino_wm code
     return video_tensor
 
 

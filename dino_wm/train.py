@@ -26,6 +26,12 @@ from utils import slice_trajdict_with_t, cfg_to_dict, seed, sample_tensors
 warnings.filterwarnings("ignore")
 log = logging.getLogger(__name__)
 
+print(torch.cuda.is_available())
+print(torch.cuda.device_count())
+print(torch.cuda.current_device())
+print(torch.cuda.device(0))
+print(torch.cuda.get_device_name(0))
+
 class Trainer:
     def __init__(self, cfg):
         self.cfg = cfg

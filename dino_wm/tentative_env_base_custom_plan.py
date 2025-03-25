@@ -15,7 +15,6 @@ from pathlib import Path
 from einops import rearrange
 from omegaconf import OmegaConf, open_dict
 
-from env.venv import SubprocVectorEnv
 from custom_resolvers import replace_slash
 from preprocessor import Preprocessor
 from planning.evaluator import PlanEvaluator
@@ -114,7 +113,7 @@ class PlanWorkspace:
         cfg_dict: dict,
         wm: torch.nn.Module,
         dset,
-        env: SubprocVectorEnv,
+        env,
         env_name: str,
         frameskip: int,
         wandb_run: wandb.run,
@@ -469,7 +468,12 @@ def planning_main(cfg_dict):
                 for _ in range(cfg_dict["n_evals"])
             ]
         )
+    elif model_cfg.env.name == "custom":
+        print("HEYYYYYYYYYYYY")
+        # TODO: implement a custom variant of an env that output the datasets as rollout
+        # Problem : we need to change PlanEvaluator behaviour according to it (imply heavy if else statement)
     else:
+        from env.venv import SubprocVectorEnv
         env = SubprocVectorEnv(
             [
                 lambda: gym.make(
@@ -500,7 +504,7 @@ def main(cfg: OmegaConf):
         log.info(f"Planning result saved dir: {cfg['saved_folder']}")
     cfg_dict = cfg_to_dict(cfg)
     cfg_dict["wandb_logging"] = True
-    planning_main(cfg_dict)
+    planning_main(cfg_dict) 
 
 
 if __name__ == "__main__":

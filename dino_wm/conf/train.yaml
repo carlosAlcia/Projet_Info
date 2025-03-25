@@ -13,9 +13,9 @@ ckpt_base_path: ./ # put absolute path here
 
 hydra:
   run:
-    dir: ${ckpt_base_path}/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: ${ckpt_base_path}/outputs/VWM
   sweep:
-    dir: ${ckpt_base_path}/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: ${ckpt_base_path}/outputs/VWM
     subdir: ${hydra.job.num}
   launcher:
     submitit_folder: ${hydra.sweep.dir}/.submitit/%j
@@ -32,7 +32,7 @@ hydra:
 training:
   seed: 0
   epochs: 1
-  batch_size: 8 # should >= nodes * tasks_per_node
+  batch_size: 4 # should >= nodes * tasks_per_node
   save_every_x_epoch: 1
   reconstruct_every_x_batch: 100
   num_reconstruct_samples: 6

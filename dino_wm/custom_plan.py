@@ -1,9 +1,10 @@
 import os
-import gym
 import json
 import hydra
 import random
 import torch
+from torchvision import utils
+import imageio
 import pickle
 import wandb
 import logging
@@ -14,12 +15,10 @@ from itertools import product
 from pathlib import Path
 from einops import rearrange
 from omegaconf import OmegaConf, open_dict
-
-from env.venv import SubprocVectorEnv
-from custom_resolvers import replace_slash
 from preprocessor import Preprocessor
-from planning.evaluator import PlanEvaluator
-from utils import cfg_to_dict, seed
+from utils import cfg_to_dict, seed, move_to_device
+from torch.profiler import profile, ProfilerActivity
+
 
 warnings.filterwarnings("ignore")
 log = logging.getLogger(__name__)
@@ -114,16 +113,12 @@ class PlanWorkspace:
         cfg_dict: dict,
         wm: torch.nn.Module,
         dset,
-        env: SubprocVectorEnv,
-        env_name: str,
         frameskip: int,
         wandb_run: wandb.run,
     ):
         self.cfg_dict = cfg_dict
         self.wm = wm
         self.dset = dset
-        self.env = env
-        self.env_name = env_name
         self.frameskip = frameskip
         self.wandb_run = wandb_run
         self.device = next(wm.parameters()).device
@@ -156,19 +151,6 @@ class PlanWorkspace:
         else:
             self.prepare_targets()
 
-        self.evaluator = PlanEvaluator(
-            obs_0=self.obs_0,
-            obs_g=self.obs_g,
-            state_0=self.state_0,
-            state_g=self.state_g,
-            env=self.env,
-            wm=self.wm,
-            frameskip=self.frameskip,
-            seed=self.eval_seed,
-            preprocessor=self.data_preprocessor,
-            n_plot_samples=self.cfg_dict["n_plot_samples"],
-        )
-
         if self.wandb_run is None or isinstance(
             self.wandb_run, wandb.sdk.lib.disabled.RunDisabled
         ):
@@ -178,11 +160,10 @@ class PlanWorkspace:
         self.planner = hydra.utils.instantiate(
             self.cfg_dict["planner"],
             wm=self.wm,
-            env=self.env,  # only for mpc
             action_dim=self.action_dim,
             objective_fn=objective_fn,
             preprocessor=self.data_preprocessor,
-            evaluator=self.evaluator,
+            evaluator=None,
             wandb_run=self.wandb_run,
             log_filename=self.log_filename,
         )
@@ -201,64 +182,45 @@ class PlanWorkspace:
         states = []
         actions = []
         observations = []
-        
-        if self.goal_source == "random_state":
-            # update env config from val trajs
-            observations, states, actions, env_info = (
-                self.sample_traj_segment_from_dset(traj_len=2)
-            )
-            self.env.update_env(env_info)
 
-            # sample random states
-            rand_init_state, rand_goal_state = self.env.sample_random_init_goal_states(
-                self.eval_seed
-            )
-            if self.env_name == "deformable_env": # take rand init state from dset for deformable envs
-                rand_init_state = np.array([x[0] for x in states])
+        # update env config from val trajs
+        observations, states, actions, env_info = ( # TODO: USE THIS ...
+            self.sample_traj_segment_from_dset(traj_len=self.frameskip * self.goal_H + 1)
+        )
 
-            obs_0, state_0 = self.env.prepare(self.eval_seed, rand_init_state)
-            obs_g, state_g = self.env.prepare(self.eval_seed, rand_goal_state)
+        self.reference_actions_for_eval = actions
 
-            # add dim for t
-            for k in obs_0.keys():
-                obs_0[k] = np.expand_dims(obs_0[k], axis=1)
-                obs_g[k] = np.expand_dims(obs_g[k], axis=1)
+        # get states from val trajs
+        init_state = [x[0] for x in states]
+        init_state = np.array(init_state)
+        goal_state = [x[-1] for x in states]
+        goal_state = np.array(init_state)
+        actions = torch.stack(actions)
+        if self.goal_source == "random_action":
+            actions = torch.randn_like(actions)
+        wm_actions = rearrange(actions, "b (t f) d -> b t (f d)", f=self.frameskip)
 
-            self.obs_0 = obs_0
-            self.obs_g = obs_g
-            self.state_0 = rand_init_state  # (b, d)
-            self.state_g = rand_goal_state
-            self.gt_actions = None
-        else:
-            # update env config from val trajs
-            observations, states, actions, env_info = (
-                self.sample_traj_segment_from_dset(traj_len=self.frameskip * self.goal_H + 1)
-            )
-            self.env.update_env(env_info)
+        self.obs_0 = {
+            key: np.expand_dims(arr, axis=1)
+            for key, arr in observations[0].items()
+        }
+        self.obs_g = {
+            key: np.expand_dims(arr, axis=1)
+            for key, arr in observations[-1].items()
+        }
 
-            # get states from val trajs
-            init_state = [x[0] for x in states]
-            init_state = np.array(init_state)
-            actions = torch.stack(actions)
-            if self.goal_source == "random_action":
-                actions = torch.randn_like(actions)
-            wm_actions = rearrange(actions, "b (t f) d -> b t (f d)", f=self.frameskip)
-            exec_actions = self.data_preprocessor.denormalize_actions(actions)
-            # replay actions in env to get gt obses
-            rollout_obses, rollout_states = self.env.rollout(
-                self.eval_seed, init_state, exec_actions.numpy()
-            )
-            self.obs_0 = {
-                key: np.expand_dims(arr[:, 0], axis=1)
-                for key, arr in rollout_obses.items()
-            }
-            self.obs_g = {
-                key: np.expand_dims(arr[:, -1], axis=1)
-                for key, arr in rollout_obses.items()
-            }
-            self.state_0 = init_state  # (b, d)
-            self.state_g = rollout_states[:, -1]  # (b, d)
-            self.gt_actions = wm_actions
+        self.obs_0["visual"] = self.obs_0["visual"].transpose(0, 1, 3, 4, 2).copy()
+        self.obs_g["visual"] = self.obs_g["visual"].transpose(0, 1, 3, 4, 2).copy()
+
+
+        print(self.obs_0["visual"].shape)
+        print(self.obs_g["visual"].shape)
+        print(self.obs_g["proprio"].shape)
+        print(self.obs_g["proprio"].shape)
+
+        self.state_0 = init_state  # (b, d)
+        self.state_g = goal_state  # (b, d)
+        self.gt_actions = wm_actions
 
     def sample_traj_segment_from_dset(self, traj_len):
         states = []
@@ -274,9 +236,10 @@ class PlanWorkspace:
         ]
         if len(valid_traj) == 0:
             raise ValueError("No trajectory in the dataset is long enough.")
-
+        
         # sample init_states from dset
         for i in range(self.n_evals):
+            print(i)
             max_offset = -1
             while max_offset < 0:  # filter out traj that are not long enough
                 traj_id = random.randint(0, len(self.dset) - 1)
@@ -332,22 +295,9 @@ class PlanWorkspace:
             obs_g=self.obs_g,
             actions=actions_init,
         )
-        logs, successes, _, _ = self.evaluator.eval_actions(
-            actions.detach(), action_len, save_video=True, filename="output_final"
-        )
-        logs = {f"final_eval/{k}": v for k, v in logs.items()}
-        self.wandb_run.log(logs)
-        logs_entry = {
-            key: (
-                value.item()
-                if isinstance(value, (np.float32, np.int32, np.int64))
-                else value
-            )
-            for key, value in logs.items()
-        }
-        with open(self.log_filename, "a") as file:
-            file.write(json.dumps(logs_entry) + "\n")
-        return logs
+
+        print(actions)
+        print(self.reference_actions_for_eval)
 
 
 def load_ckpt(snapshot_path, device):
@@ -458,33 +408,10 @@ def planning_main(cfg_dict):
     )
     model = load_model(model_ckpt, model_cfg, num_action_repeat, device=device)
 
-    # use dummy vector env for wall and deformable envs
-    if model_cfg.env.name == "wall" or model_cfg.env.name == "deformable_env":
-        from env.serial_vector_env import SerialVectorEnv
-        env = SerialVectorEnv(
-            [
-                gym.make(
-                    model_cfg.env.name, *model_cfg.env.args, **model_cfg.env.kwargs
-                )
-                for _ in range(cfg_dict["n_evals"])
-            ]
-        )
-    else:
-        env = SubprocVectorEnv(
-            [
-                lambda: gym.make(
-                    model_cfg.env.name, *model_cfg.env.args, **model_cfg.env.kwargs
-                )
-                for _ in range(cfg_dict["n_evals"])
-            ]
-        )
-
     plan_workspace = PlanWorkspace(
         cfg_dict=cfg_dict,
         wm=model,
         dset=dset,
-        env=env,
-        env_name=model_cfg.env.name,
         frameskip=model_cfg.frameskip,
         wandb_run=wandb_run,
     )
@@ -504,4 +431,8 @@ def main(cfg: OmegaConf):
 
 
 if __name__ == "__main__":
-    main()
+    with profile(activities=[ProfilerActivity.CUDA], with_modules=True, profile_memory=True) as prof:
+        try:
+            main()
+        except:
+            print(prof.key_averages())

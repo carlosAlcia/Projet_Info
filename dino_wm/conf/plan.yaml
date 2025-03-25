@@ -5,17 +5,17 @@ defaults:
 
 hydra:
   run:
-    dir: plan_outputs/${now:%Y%m%d%H%M%S}_${replace_slash:${model_name}}_gH${goal_H}
+    dir: ./outputs/plan
   sweep:
-    dir: plan_outputs/${now:%Y%m%d%H%M%S}_${replace_slash:${model_name}}_gH${goal_H}
+    dir: ./outputs/plan
     subdir: ${hydra.job.num}
   launcher:
     submitit_folder: ${hydra.sweep.dir}/.submitit/%j
     nodes: 1
     tasks_per_node: 1
-    cpus_per_task: 16
-    mem_gb: 256
-    gres: "gpu:h100:1"
+    cpus_per_task: 4
+    gpus_per_node: 1
+    mem_gb: 16
     qos: "explore"
     timeout_min: 720
     setup: ["export DEBUGVAR=$(scontrol show hostnames $SLURM_JOB_NODELIST)",
@@ -23,12 +23,12 @@ hydra:
             "export MASTER_PORT=$(for port in $(shuf -i 30000-65500 -n 20); do if [[ $(netstat -tupln 2>&1 | grep $port | wc -l) -eq 0 ]] ; then echo $port; break; fi; done;)",]
 
 # model to load for planning
-ckpt_base_path: ./ # put absolute path here. Checkpoints will be loaded from ${ckpt_base_path}/outputs
-model_name: null
+ckpt_base_path: ${oc.env:CURRENT_DIR, ./} # put absolute path here. Checkpoints will be loaded from ${ckpt_base_path}/outputs
+model_name: VWM
 model_epoch: latest
 
 seed: 99
-n_evals: 10
+n_evals: 1
 goal_source: 'dset' # 'random_state' or 'dset' or 'random_action' 
 goal_H: 5 # specifies how far away the goal is if goal_source is 'dset'
 n_plot_samples: 10

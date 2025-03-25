@@ -70,7 +70,7 @@ def sample_tensors(tensors, n, indices=None):
 
 
 def cfg_to_dict(cfg):
-    cfg_dict = OmegaConf.to_container(cfg)
+    cfg_dict = OmegaConf.to_container(cfg, resolve=True)
     for key in cfg_dict:
         if isinstance(cfg_dict[key], list):
             cfg_dict[key] = ",".join(cfg_dict[key])

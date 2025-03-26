@@ -1,7 +1,7 @@
 #!/bin/bash
 export CURRENT_DIR=$(pwd)
 echo "CURRENT_DIR=${CURRENT_DIR}"
-export WANDB_MODE=disabled
+export WANDB_MODE=online
 echo "WANDB_MODE=${WANDB_MODE}"
 export HYDRA_FULL_ERROR=1
 echo "HYDRA_FULL_ERROR=${HYDRA_FULL_ERROR}"

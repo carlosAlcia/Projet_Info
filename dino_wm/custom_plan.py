@@ -1,10 +1,7 @@
 import os
-import json
 import hydra
 import random
 import torch
-from torchvision import utils
-import imageio
 import pickle
 import wandb
 import logging
@@ -16,9 +13,7 @@ from pathlib import Path
 from einops import rearrange
 from omegaconf import OmegaConf, open_dict
 from preprocessor import Preprocessor
-from utils import cfg_to_dict, seed, move_to_device
-from torch.profiler import profile, ProfilerActivity
-
+from utils import cfg_to_dict, seed, aggregate_dct
 
 warnings.filterwarnings("ignore")
 log = logging.getLogger(__name__)
@@ -188,8 +183,6 @@ class PlanWorkspace:
             self.sample_traj_segment_from_dset(traj_len=self.frameskip * self.goal_H + 1)
         )
 
-        self.reference_actions_for_eval = actions
-
         # get states from val trajs
         init_state = [x[0] for x in states]
         init_state = np.array(init_state)
@@ -199,19 +192,20 @@ class PlanWorkspace:
         if self.goal_source == "random_action":
             actions = torch.randn_like(actions)
         wm_actions = rearrange(actions, "b (t f) d -> b t (f d)", f=self.frameskip)
+        
+        aggr_observations = aggregate_dct(observations)
 
         self.obs_0 = {
-            key: np.expand_dims(arr, axis=1)
-            for key, arr in observations[0].items()
+            key: np.expand_dims(arr[:, 0], axis=1)
+            for key, arr in aggr_observations.items()
         }
         self.obs_g = {
-            key: np.expand_dims(arr, axis=1)
-            for key, arr in observations[-1].items()
+            key: np.expand_dims(arr[:, -1], axis=1)
+            for key, arr in aggr_observations.items()
         }
 
         self.obs_0["visual"] = self.obs_0["visual"].transpose(0, 1, 3, 4, 2).copy()
         self.obs_g["visual"] = self.obs_g["visual"].transpose(0, 1, 3, 4, 2).copy()
-
 
         print(self.obs_0["visual"].shape)
         print(self.obs_g["visual"].shape)
@@ -296,8 +290,13 @@ class PlanWorkspace:
             actions=actions_init,
         )
 
-        print(actions)
-        print(self.reference_actions_for_eval)
+        MSE = torch.nn.functional.mse_loss(actions.cpu(), self.gt_actions.cpu())
+        print("MSE:", MSE)
+        print(actions.shape, self.gt_actions.shape)
+        print(actions[0,0,:], self.gt_actions[0,0,:])
+
+        with open("MSE.txt", "a") as f:
+            f.write(str(MSE)+"\n")
 
 
 def load_ckpt(snapshot_path, device):
@@ -431,8 +430,4 @@ def main(cfg: OmegaConf):
 
 
 if __name__ == "__main__":
-    with profile(activities=[ProfilerActivity.CUDA], with_modules=True, profile_memory=True) as prof:
-        try:
-            main()
-        except:
-            print(prof.key_averages())
+    main()

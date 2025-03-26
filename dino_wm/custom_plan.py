@@ -284,19 +284,34 @@ class PlanWorkspace:
             actions_init = self.gt_actions
         else:
             actions_init = None
+            
         actions, action_len = self.planner.plan(
             obs_0=self.obs_0,
             obs_g=self.obs_g,
             actions=actions_init,
         )
 
-        MSE = torch.nn.functional.mse_loss(actions.cpu(), self.gt_actions.cpu())
-        print("MSE:", MSE)
-        print(actions.shape, self.gt_actions.shape)
-        print(actions[0,0,:], self.gt_actions[0,0,:])
+        rearr_actions = rearrange(actions.cpu(), "b t (f d) -> b (t f) d", f=self.frameskip)
+        rearr_actions_gt = rearrange(self.gt_actions.cpu(), "b t (f d) -> b (t f) d", f=self.frameskip)
 
-        with open("MSE.txt", "a") as f:
-            f.write(str(MSE)+"\n")
+        unormal_actions = self.data_preprocessor.denormalize_actions(rearr_actions)
+        unormal_actions_gt = self.data_preprocessor.denormalize_actions(rearr_actions_gt)
+
+        MSE = torch.nn.functional.mse_loss(unormal_actions.cpu(), unormal_actions_gt.cpu())
+        print("Mean square error:", MSE)
+
+        print(unormal_actions.shape, unormal_actions_gt.shape)
+        print(unormal_actions[0,0,:])
+        print(unormal_actions_gt[0,0,:])
+
+        abs_diff = abs(unormal_actions-unormal_actions_gt)
+
+        print(abs_diff[0,0,:])
+
+        print("Mean absolute error :", abs_diff.mean())
+
+        with open("error.txt", "a") as f:
+            f.write("MSE:"+str(MSE)+"|MAE:"+str(abs_diff.mean())+"\n")
 
 
 def load_ckpt(snapshot_path, device):
@@ -399,6 +414,7 @@ def planning_main(cfg_dict):
         num_pred=model_cfg.num_pred,
         frameskip=model_cfg.frameskip,
     )
+
     dset = dset["valid"]
 
     num_action_repeat = model_cfg.num_action_repeat

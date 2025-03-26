@@ -3,7 +3,6 @@ import numpy as np
 from einops import rearrange
 from .base_planner import BasePlanner
 from utils import move_to_device
-import matplotlib.pyplot as plt
 
 
 class GDPlanner(BasePlanner):
@@ -76,15 +75,11 @@ class GDPlanner(BasePlanner):
         Returns:
             actions: (B, T, action_dim) torch.Tensor
         """
-
-        obs_0["visual"] = rearrange(obs_0["visual"], "b t h w c -> b t c h w")
-        obs_g["visual"] = rearrange(obs_g["visual"], "b t h w c -> b t c h w")
-
         trans_obs_0 = move_to_device(
-           { key: torch.tensor(value) for key, value in obs_0.items() }, self.device
+            self.preprocessor.transform_obs(obs_0), self.device
         )
         trans_obs_g = move_to_device(
-            { key: torch.tensor(value) for key, value in obs_g.items() }, self.device
+            self.preprocessor.transform_obs(obs_g), self.device
         )
         z_obs_g = self.wm.encode_obs(trans_obs_g)
         z_obs_g_detached = {key: value.detach() for key, value in z_obs_g.items()}
@@ -123,60 +118,4 @@ class GDPlanner(BasePlanner):
                 self.dump_logs(logs)
                 if np.all(successes):
                     break  # terminate planning if all success
-
-        with torch.no_grad():
-
-            z_obses, _ = self.wm.rollout(
-                obs_0=trans_obs_0,
-                act=actions,
-            )
-
-            obs_rollout_final, _ = self.wm.decode_obs(z_obses)
-            print(obs_rollout_final["visual"].shape)
-            print(obs_rollout_final["visual"].min(), obs_rollout_final["visual"].max())
-            obs_rollout_final = obs_rollout_final["visual"] * 0.5 + 0.5
-            print(obs_rollout_final.min(), obs_rollout_final.max())
-            obs_rollout_final = rearrange(obs_rollout_final, "b t c h w -> b t h w c")
-            print(obs_rollout_final.shape)
-            obs_rollout_final = obs_rollout_final[:,-1]
-
-            print(trans_obs_g["visual"].shape)
-            print(trans_obs_g["visual"].min(), trans_obs_g["visual"].max())
-            obs_g_raw = trans_obs_g["visual"] * 0.5 + 0.5
-            print(obs_g_raw.min(), obs_g_raw.max())
-            obs_g_raw = rearrange(obs_g_raw, "b t c h w -> b t h w c")
-            print(obs_g_raw.shape)
-
-            obs_g_enc_dec, _ = self.wm.decode_obs(z_obs_g)
-            print(obs_g_enc_dec["visual"].shape)
-            print(obs_g_enc_dec["visual"].min(), obs_g_enc_dec["visual"].max())
-            obs_g_enc_dec = obs_g_enc_dec["visual"] * 0.5 + 0.5
-            print(obs_g_enc_dec.min(), obs_g_enc_dec.max())
-            obs_g_enc_dec = rearrange(obs_g_enc_dec, "b t c h w -> b t h w c")
-            print(obs_g_enc_dec.shape)
-
-            obs_0_raw = trans_obs_0
-            print(obs_0_raw["visual"].shape)
-            print(obs_0_raw["visual"].min(), obs_0_raw["visual"].max())
-            obs_0_raw = obs_0_raw["visual"] * 0.5 + 0.5
-            print(obs_0_raw.min(), obs_0_raw.max())
-            obs_0_raw = rearrange(obs_0_raw, "b t c h w -> b t h w c")
-            print(obs_0_raw.shape)
-
-            for i in range(n_evals):
-                plt.figure()
-                plt.subplot(2,2,1)
-                plt.imshow(obs_0_raw[i].squeeze().cpu())
-                plt.xlabel("Initial")
-                plt.subplot(2,2,2)
-                plt.imshow(obs_g_enc_dec[i].squeeze().cpu())
-                plt.xlabel("Goal")
-                plt.subplot(2,2,3)
-                plt.imshow(obs_g_enc_dec[i].squeeze().cpu())
-                plt.xlabel("Goal encoded and decoded")
-                plt.subplot(2,2,4)
-                plt.imshow(obs_rollout_final[i].squeeze().cpu())
-                plt.xlabel("End of WM rollout with predicted actions")
-                plt.show()
-        
         return actions, np.full(n_evals, np.inf)  # all actions are valid

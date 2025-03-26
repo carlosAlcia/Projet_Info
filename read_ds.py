@@ -6,7 +6,7 @@ import json
 import pandas as pd
 from pathlib import Path
 
-dataset_name = "Ityl/so100_recording1" # assume dataset has been fetched previously using LeRobotDataset(dataset_name)
+dataset_name = "Ityl/so100_recording2" # assume dataset has been fetched previously using LeRobotDataset(dataset_name)
 
 dino_ds_folder = "dataset_dino/custom" # output folder
 

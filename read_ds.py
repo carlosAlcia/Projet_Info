@@ -8,10 +8,11 @@ from pathlib import Path
 
 dataset_name = "Ityl/so100_recording2" # assume dataset has been fetched previously using LeRobotDataset(dataset_name)
 
-dino_ds_folder = "dataset_dino/custom" # output folder
+
+
 
 H, W = 224, 224
-
+dino_ds_folder = "dataset_dino/custom" # output folder
 user_dir = str(Path.home())
 lerobot_ds_folder = user_dir + "/.cache/huggingface/lerobot/" + dataset_name # dataset_hugging
 

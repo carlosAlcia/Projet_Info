@@ -24,7 +24,9 @@ La variable `dataset_name` permet de choisir le dataset à convertir. Sa valeur 
 
 ## `train.sh`
 
-Ce script bash va exporter 3 variables d'environnement : `DATASET_DIR`, `WANDB_MODE` et `HYDRA_FULL_ERROR`, et lancer le script python `dino_wm/train.py`. `DATASET_DIR` donne le chemin jusqu'au jeu de donnée (produit par conversion avec `read_ds.py`). `WANDB_MODE` est à online par défaut, mais si set
+Ce script bash va exporter 3 variables d'environnement : `DATASET_DIR`, `WANDB_MODE` et `HYDRA_FULL_ERROR`, et lancer le script python `dino_wm/train.py`. `DATASET_DIR` donne le chemin jusqu'au jeu de donnée (produit par conversion avec `read_ds.py`). `WANDB_MODE` est à "online" par défaut, mais si Weights and Biases pose problème, on peut remplacer "online" par "disabled" pour le désactiver. `HYDRA_FULL_ERROR=1` permet d'avoir des messages d'erreur plus complets.
+
+Enfin, le script `dino_wm/train.py` réalise l'entrainement lui-même. Les résultats de l'entrainement sont mis dans le dossier `outputs/VWM`. L'entrainement est paramétré par le fichier `dino_wm/conf/train.yaml`. On remarquera la ligne qui choisi notre (faux) environnement `env: custom_env` (et donc le custom dataset, ce qui nous permet de charger les données)
 
 
 ## `plan.sh`
